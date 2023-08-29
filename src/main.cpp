@@ -2,15 +2,23 @@
 #include <HardwareSerial.h>
 #include <WiFi.h>
 
-#define DEBUG_PRINT 0
+#define DEBUG_PRINT 1
 
 void SerialDebugPrint(const char *text);
 void SerialDebugPrint(int number);
 
+/*
 const char *ssid = "FiberHGW_ZT3Q34_2.4GHz";
 const char *password = "phJJEy9HPd";
 const char *ip = "192.168.1.39";
 const uint16_t port = 3131;
+*/
+
+const char *ssid = "QuaNet";
+const char *password = "a987654999";
+const char *ip = "192.168.0.200";
+const uint16_t port = 1234;
+
 const int TCPConnectTimeout = 1000;
 
 const char *ACK_MESSAGE = "ACK";
@@ -93,6 +101,10 @@ void setup()
 	if (xReturned != pdPASS)
 	{
 		SerialDebugPrint("vSerialParserTask Creation Failed!");
+		while (1)
+		{
+			/* Error */
+		}
 	}
 	else
 	{
@@ -108,27 +120,27 @@ void setup()
 	if (xReturned != pdPASS)
 	{
 		SerialDebugPrint("vTCPConnectionTask Creation Failed!");
+		while (1)
+		{
+			/* Error */
+		}
 	}
 	else
 	{
 		SerialDebugPrint("vTCPConnectionTask Created!");
 	}
 
-	vTaskStartScheduler();
+	/** 
+	 *  vTaskStartScheduler() must not be used. 
+	 *	It causes constant crash of the code with the error below:
+	 *
+	 *	"Guru Meditation Error: Core 1 panic'ed (LoadProhibited). Exception was unhandled."
+	 */
 }
 
 void loop()
 {
 	/* Leave empty! */
-}
-
-static void FlushSerialReceiveBuffer()
-{
-	while (Serial.available() > 0)
-	{
-		char t = Serial.read();
-	}
-	SerialDebugPrint("Message buffer cleared!");
 }
 
 static bool CalculateChecksum(uint8_t *dataPointer, uint8_t size)
@@ -183,6 +195,24 @@ void SendNAKToRemote(const char messageType)
 void vTCPConnectionTask(void *pvParameters)
 {
 	configASSERT(((uint32_t)pvParameters) == 1);
+
+	/* Assigning static IP because TP-Link AP does not have DHCP */
+	IPAddress localIP(192, 168, 0, 201);
+	IPAddress subnet(255, 255, 0, 0);
+
+	/* Subnet and IP is enough */
+	IPAddress primaryDNS(0, 0, 0, 0);
+	IPAddress secondaryDNS(0, 0, 0, 0);
+	IPAddress gateway(0, 0, 0, 0);
+
+	if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS)) 
+	{
+    	SerialDebugPrint("Failed to IP and subnet");
+		while (1)
+		{
+			vTaskDelay(10000);
+		}
+ 	}
 
 	for (;;)
 	{
@@ -259,7 +289,7 @@ void vTCPConnectionTask(void *pvParameters)
 				break;
 			}
 		}
-		taskYIELD();
+		vTaskDelay(1);
 	}
 }
 
@@ -270,24 +300,27 @@ void vSerialParserTask(void *pvParameters)
 	for (;;)
 	{
 		static int bufferClearCounter = 0;
+		xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);   
 		int size = Serial.available();
+		xSemaphoreGive(xSerialPrintSemaphore);
 		if (size > 0)
 		{
+			xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);   
 			uint8_t readByte = Serial.peek();
+			xSemaphoreGive(xSerialPrintSemaphore);
 			if (readByte == 'R' && size >= 5)
 			{
 				bufferClearCounter = 0;
 				uint8_t readArray[5] = {0};
+				xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
 				for (uint8_t i = 0; i < 5; i++)
 				{
 					readArray[i] = Serial.read();
 				}
-
+				xSemaphoreGive(xSerialPrintSemaphore);
 				if (strncmp((char *)readArray, "RESET", 5) == 0)
 				{
 					SerialDebugPrint("Reset Command Came!");
-					SendACKToRemote(RESET_COMMAND);
-					
 					WiFi.disconnect();
 					client.flush();
 					close(client.fd());
@@ -305,11 +338,12 @@ void vSerialParserTask(void *pvParameters)
 			{
 				bufferClearCounter = 0;
 				uint8_t readArray[9] = {0};
+				xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
 				for (uint8_t i = 0; i < 9; i++)
 				{
 					readArray[i] = Serial.read();
 				}
-
+				xSemaphoreGive(xSerialPrintSemaphore);
 				if ((strncmp((char *)readArray, "TCP", 3) == 0) && (CalculateChecksum(readArray, 9) == true))
 				{
 					SerialDebugPrint("TCP Command Came!");
@@ -331,10 +365,12 @@ void vSerialParserTask(void *pvParameters)
 			{
 				bufferClearCounter = 0;
 				uint8_t readArray[4] = {0};
+				xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
 				for (uint8_t i = 0; i < 4; i++)
 				{
 					readArray[i] = Serial.read();
 				}
+				xSemaphoreGive(xSerialPrintSemaphore);
 				if (strncmp((char *)readArray, "STAT", 4) == 0)
 				{
 					SerialDebugPrint("STAT Command Came!");
@@ -362,7 +398,9 @@ void vSerialParserTask(void *pvParameters)
 					{
 						SendNAKToRemote(TCP_COMMAND);
 					}
+					xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
 					char discardByte = Serial.read();
+					xSemaphoreGive(xSerialPrintSemaphore);
 				}
 			}
 			else
@@ -370,10 +408,12 @@ void vSerialParserTask(void *pvParameters)
 				/* Discard the byte that is not a header */
 				SerialDebugPrint("Non-header byte discarded");
 				bufferClearCounter = 0;
+				xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
 				char discardByte = Serial.read();
+				xSemaphoreGive(xSerialPrintSemaphore);
 			}
 		}
-		taskYIELD();
+		vTaskDelay(1);
 	}
 }
 
