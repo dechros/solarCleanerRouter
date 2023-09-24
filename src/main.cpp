@@ -1,14 +1,24 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-const char *ssid = "ESP32-AP";
-const char *password = "88888888";
+#define DEBUG_PRINT         1
+#define MACHINE_SERIAL      Serial2
+#define ACK_MESSAGE         "ACK"
+#define TCP_MESSAGE_HEADER  "TCP"
+#define SSID                "ESP32-AP"
+#define PASSWORD            "88888888"
+#define PORT                3131
+
+
+bool ControlChecksum(uint8_t *dataPointer, uint8_t size);
+void SerialDebugPrint(const char *text);
+void SerialDebugPrint(int number);
+
 IPAddress staticIP(192, 168, 31, 2);
 IPAddress gateway(192, 168, 31, 1);
 IPAddress subnet(255, 255, 255, 0);
-const int serverPort = 3131;
 
-WiFiServer server(serverPort);
+WiFiServer server(PORT);
 WiFiClient client;
 
 typedef enum
@@ -18,6 +28,7 @@ typedef enum
 } TCPConnectionState_t;
 TCPConnectionState_t TCPConnectionState;
 
+SemaphoreHandle_t xSerialPrintSemaphore;
 TimerHandle_t TCPMessageTimer;
 bool TCPMessageTimeout = false;
 
@@ -30,7 +41,6 @@ typedef struct
 	uint8_t joystickY;
     uint8_t driveSpeed;
     uint8_t brushSpeed;
-    uint8_t batteryVoltage;
 	union
 	{
 		uint8_t buttons;
@@ -55,18 +65,6 @@ typedef struct
             uint8_t                 :7;
 		};
 	};
-    union
-	{
-		uint8_t leds;
-		struct
-		{
-			uint8_t warningLedRed   :1;
-            uint8_t warningLedGreen :1;
-            uint8_t batteryLedRed   :1;
-            uint8_t batteryLedGreen :1;
-            uint8_t                 :4;
-		};
-	};
 	uint8_t checksum;
 }TCPMessage_t;
 
@@ -78,19 +76,22 @@ void TCPMessageTimerCallback(TimerHandle_t xTimer)
 void setup()
 {
     TCPConnectionState = WAITING_FOR_CLIENT;
-    Serial.begin(9600);
+    xSerialPrintSemaphore = xSemaphoreCreateMutex();
+    Serial.begin(115200);
+    MACHINE_SERIAL.begin(9600);
     WiFi.softAPConfig(staticIP, gateway, subnet);
-    WiFi.softAP(ssid, password);
+    WiFi.softAP(SSID, PASSWORD, 1, 1, 4);
     server.begin();
     TCPMessageTimer = xTimerCreate("TCPMessageTimer", pdMS_TO_TICKS(1000), pdTRUE, (void *)0, TCPMessageTimerCallback);
     if (TCPMessageTimer == NULL)
     {
-        Serial.println("Timer Creation Error!");
+        SerialDebugPrint("Timer Creation Error");
         while(1)
         {
             /* Error! */
         }
     }
+    SerialDebugPrint("Setup Complete!");
 }
 
 void loop()
@@ -102,7 +103,7 @@ void loop()
             client = server.available();
             if (client)
             {
-                Serial.println("New client connected");
+                SerialDebugPrint("New client connected");
                 TCPConnectionState = CLIENT_CONNECTED;
             }
             break;
@@ -111,7 +112,7 @@ void loop()
         {
             if (xTimerReset(TCPMessageTimer, 10) != pdPASS) 
             {
-                Serial.println("Failed to start timer!");
+                SerialDebugPrint("Failed to start timer!");
             }
             uint8_t bufferClearCounter = 0;
             while (client.connected())
@@ -127,52 +128,105 @@ void loop()
                 {
                     if(xTimerReset(TCPMessageTimer, 10) != pdPASS)
                     {
-                        Serial.println("Timer Reset Failed!");
+                        SerialDebugPrint("Timer Reset Failed!");
                     }
                     bufferClearCounter = 0;
                     int readData = client.peek();
                     if (readData == 'T' && tcpBufferSize >= sizeof(TCPMessage_t))
                     {
-                        //Serial.println("Header Byte and size are correct!");
                         TCPMessage_t readTCPMessage;
                         client.readBytes((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
-                        if (readTCPMessage.headerT == 'T' && readTCPMessage.headerC == 'C' && readTCPMessage.headerP == 'P' )
+                        /* Check the "TCP Message Header" */
+                        if (strncmp((const char*)&readTCPMessage, TCP_MESSAGE_HEADER, 3) == 0)
                         {
-                            //Serial.println("Message is correct!");
-                            Serial.write((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
-                            uint8_t ackArray[3] = {'A', 'C', 'K'};
-                            client.write(ackArray, 3);
+                            /* Control the checksum of message */
+                            bool result = ControlChecksum((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
+                            if (result == true)
+                            {
+                                MACHINE_SERIAL.write((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
+                                bool ackCameFromMachine = false;
+                                uint8_t ackWaitCounter = 0;
+                                while (1)
+                                {
+                                    if (MACHINE_SERIAL.available() >= 3)
+                                    {
+                                        ackWaitCounter = 0;
+                                        uint8_t message[3] = {0};
+                                        MACHINE_SERIAL.readBytes(message, 3);
+                                        if (strncmp((const char*)message, ACK_MESSAGE, 3) == 0)
+                                        {
+                                            /* ACK Came from machine */
+                                            ackCameFromMachine = true;
+                                            break;
+                                        }
+                                        else
+                                        {
+                                            /* Unknown 3 byte message came */
+                                            SerialDebugPrint("Unknown 3 byte message came from machine");
+                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        /* Wait max 20ms for ACK */
+                                        vTaskDelay(5/portTICK_PERIOD_MS);
+                                        ackWaitCounter++;
+                                        if (ackWaitCounter == 4)
+                                        {
+                                            /* Clear Serial receive buffer in case of half message */
+                                            SerialDebugPrint("ackWaitCounter timeout!");
+                                            int bufferSize = MACHINE_SERIAL.available();
+                                            for (uint8_t i = 0; i < bufferSize; i++)
+                                            {
+                                                int discardByte = MACHINE_SERIAL.read();
+                                            }
+                                            ackWaitCounter = 0;
+                                            ackCameFromMachine = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (ackCameFromMachine == true)
+                                {
+                                    /* Send ACK to remote */
+                                    client.write(ACK_MESSAGE, 3);
+                                }
+                            }
+                            else
+                            {
+                                SerialDebugPrint("Checksum Error!");
+                            }
                         }
                         else
                         {
                             int discardData = client.read();
-                            Serial.println("Unkown Header !");
+                            SerialDebugPrint("Unkown Header !");
                         }
                     }
                     else if (readData == 'T' && tcpBufferSize < sizeof(TCPMessage_t))
                     {
-                        delay(10);
+                        vTaskDelay(10 / portTICK_PERIOD_MS);
                         bufferClearCounter++;
                         if (bufferClearCounter == 5)
                         {
                             bufferClearCounter = 0;
                             int discardData = client.read();
-                            Serial.println("Half Message! Discarded!");
+                            SerialDebugPrint("Half Message! Discarded!");
                         }
                     }
                     else
                     {
                         int discardData = client.read();
-                        Serial.println("Unkown Header!");
+                        SerialDebugPrint("Unkown Header!");
                     }
                 }
             }
             client.stop();
             if(xTimerStop(TCPMessageTimer, 10) != pdPASS)
             {
-                Serial.println("Timer Stop Failed!");
+                SerialDebugPrint("Timer Stop Failed!");
             }
-            Serial.println("Client disconnected");
+            SerialDebugPrint("Client disconnected");
             TCPConnectionState = WAITING_FOR_CLIENT;
             break;
         }
@@ -181,4 +235,33 @@ void loop()
             break;
         }
     }
+}
+
+bool ControlChecksum(uint8_t *dataPointer, uint8_t size)
+{
+	uint8_t checksum = 0;
+	for (uint8_t i = 0; i < size - 1; i++)
+	{
+		checksum ^= dataPointer[i];
+	}
+	checksum ^= 255;
+    return (dataPointer[size - 1] == checksum);
+}
+
+void SerialDebugPrint(const char *text)
+{
+#if DEBUG_PRINT
+	xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);   
+	Serial.println(text);
+	xSemaphoreGive(xSerialPrintSemaphore);
+#endif
+}
+
+void SerialDebugPrint(int number)
+{
+#if DEBUG_PRINT
+	xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);   
+	Serial.println(number);
+	xSemaphoreGive(xSerialPrintSemaphore);
+#endif
 }
