@@ -199,7 +199,6 @@ void loop()
                         }
                         else
                         {
-                            int discardData = client.read();
                             SerialDebugPrint("Unkown Header !");
                         }
                     }
