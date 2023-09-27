@@ -1,14 +1,13 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-#define DEBUG_PRINT         1
-#define MACHINE_SERIAL      Serial2
-#define ACK_MESSAGE         "ACK"
-#define TCP_MESSAGE_HEADER  "TCP"
-#define SSID                "ESP32-AP"
-#define PASSWORD            "88888888"
-#define PORT                3131
-
+#define DEBUG_PRINT 1
+#define MACHINE_SERIAL Serial2
+#define ACK_MESSAGE "ACK"
+#define TCP_MESSAGE_HEADER "TCP"
+#define SSID "ESP32-AP"
+#define PASSWORD "88888888"
+#define PORT 3131
 
 bool ControlChecksum(uint8_t *dataPointer, uint8_t size);
 void SerialDebugPrint(const char *text);
@@ -34,39 +33,39 @@ bool TCPMessageTimeout = false;
 
 typedef struct
 {
-	uint8_t headerT;
-	uint8_t headerC;
-	uint8_t headerP;
-	uint8_t joystickX;
-	uint8_t joystickY;
+    uint8_t headerT;
+    uint8_t headerC;
+    uint8_t headerP;
+    uint8_t joystickX;
+    uint8_t joystickY;
     uint8_t driveSpeed;
     uint8_t brushSpeed;
-	union
-	{
-		uint8_t buttons;
-		struct
-		{
-			uint8_t waterButton     :1;
-            uint8_t lampButton      :1;
-			uint8_t startButton     :1;
-			uint8_t passButton      :1;
-			uint8_t brushFrontCW    :1;
-			uint8_t brushFrontCCW   :1;
-			uint8_t brushRearCW     :1;
-            uint8_t brushRearCCW    :1;
-		};
-	};
     union
-	{
-		uint8_t data;
-		struct
-		{
-			uint8_t emergencyButton :1;
-            uint8_t                 :7;
-		};
-	};
-	uint8_t checksum;
-}TCPMessage_t;
+    {
+        uint8_t buttons;
+        struct
+        {
+            uint8_t waterButton : 1;
+            uint8_t lampButton : 1;
+            uint8_t startButton : 1;
+            uint8_t passButton : 1;
+            uint8_t brushFrontCW : 1;
+            uint8_t brushFrontCCW : 1;
+            uint8_t brushRearCW : 1;
+            uint8_t brushRearCCW : 1;
+        };
+    };
+    union
+    {
+        uint8_t data;
+        struct
+        {
+            uint8_t emergencyButton : 1;
+            uint8_t : 7;
+        };
+    };
+    uint8_t checksum;
+} TCPMessage_t;
 
 void TCPMessageTimerCallback(TimerHandle_t xTimer)
 {
@@ -86,7 +85,7 @@ void setup()
     if (TCPMessageTimer == NULL)
     {
         SerialDebugPrint("Timer Creation Error");
-        while(1)
+        while (1)
         {
             /* Error! */
         }
@@ -110,7 +109,7 @@ void loop()
         }
         case CLIENT_CONNECTED:
         {
-            if (xTimerReset(TCPMessageTimer, 10) != pdPASS) 
+            if (xTimerReset(TCPMessageTimer, 10) != pdPASS)
             {
                 SerialDebugPrint("Failed to start timer!");
             }
@@ -122,11 +121,11 @@ void loop()
                     TCPMessageTimeout = false;
                     break;
                 }
-                
+
                 int tcpBufferSize = client.available();
                 if (tcpBufferSize > 0)
                 {
-                    if(xTimerReset(TCPMessageTimer, 10) != pdPASS)
+                    if (xTimerReset(TCPMessageTimer, 10) != pdPASS)
                     {
                         SerialDebugPrint("Timer Reset Failed!");
                     }
@@ -135,51 +134,70 @@ void loop()
                     if (readData == 'T' && tcpBufferSize >= sizeof(TCPMessage_t))
                     {
                         TCPMessage_t readTCPMessage;
-                        client.readBytes((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
+                        client.readBytes((uint8_t *)&readTCPMessage, sizeof(TCPMessage_t));
                         /* Check the "TCP Message Header" */
-                        if (strncmp((const char*)&readTCPMessage, TCP_MESSAGE_HEADER, 3) == 0)
+                        if (strncmp((const char *)&readTCPMessage, TCP_MESSAGE_HEADER, 3) == 0)
                         {
                             /* Control the checksum of message */
-                            bool result = ControlChecksum((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
+                            bool result = ControlChecksum((uint8_t *)&readTCPMessage, sizeof(TCPMessage_t));
                             if (result == true)
                             {
-                                MACHINE_SERIAL.write((uint8_t*)&readTCPMessage, sizeof(TCPMessage_t));
+                                MACHINE_SERIAL.write((uint8_t *)&readTCPMessage, sizeof(TCPMessage_t));
                                 bool ackCameFromMachine = false;
                                 uint8_t ackWaitCounter = 0;
                                 while (1)
                                 {
-                                    if (MACHINE_SERIAL.available() >= 3)
+                                    if (MACHINE_SERIAL.available() > 0)
                                     {
-                                        ackWaitCounter = 0;
-                                        uint8_t message[3] = {0};
-                                        MACHINE_SERIAL.readBytes(message, 3);
-                                        if (strncmp((const char*)message, ACK_MESSAGE, 3) == 0)
+                                        uint8_t firstByte = MACHINE_SERIAL.peek();
+                                        if (firstByte == 'A' && MACHINE_SERIAL.available() >= 3)
                                         {
-                                            /* ACK Came from machine */
-                                            ackCameFromMachine = true;
-                                            break;
+                                            ackWaitCounter = 0;
+                                            uint8_t message[3] = {0};
+                                            MACHINE_SERIAL.readBytes(message, 3);
+                                            if (strncmp((const char *)message, ACK_MESSAGE, 3) == 0)
+                                            {
+                                                /* ACK Came from machine */
+                                                ackCameFromMachine = true;
+                                                break;
+                                            }
+                                            else
+                                            {
+                                                /* Unknown 3 byte message came */
+                                                SerialDebugPrint("Unknown 3 byte message came from machine");
+                                                break;
+                                            }
+                                        }
+                                        else if(firstByte == 'A' && MACHINE_SERIAL.available() < 3)
+                                        {
+                                            /* Wait max 20ms for ACK */
+                                            vTaskDelay(5 / portTICK_PERIOD_MS);
+                                            ackWaitCounter++;
+                                            if (ackWaitCounter == 4)
+                                            {
+                                                SerialDebugPrint("ackWaitCounter timeout!");
+                                                /* Discard one byte */
+                                                MACHINE_SERIAL.read();
+                                                ackWaitCounter = 0;
+                                                ackCameFromMachine = false;
+                                                break;
+                                            }
                                         }
                                         else
                                         {
-                                            /* Unknown 3 byte message came */
-                                            SerialDebugPrint("Unknown 3 byte message came from machine");
-                                            break;
+                                            /* Discard unknown header */
+                                            MACHINE_SERIAL.read();
                                         }
+                                        
                                     }
                                     else
                                     {
                                         /* Wait max 20ms for ACK */
-                                        vTaskDelay(5/portTICK_PERIOD_MS);
+                                        vTaskDelay(5 / portTICK_PERIOD_MS);
                                         ackWaitCounter++;
                                         if (ackWaitCounter == 4)
                                         {
-                                            /* Clear Serial receive buffer in case of half message */
-                                            SerialDebugPrint("ackWaitCounter timeout!");
-                                            int bufferSize = MACHINE_SERIAL.available();
-                                            for (uint8_t i = 0; i < bufferSize; i++)
-                                            {
-                                                int discardByte = MACHINE_SERIAL.read();
-                                            }
+                                            SerialDebugPrint("No response from machine timeout!");
                                             ackWaitCounter = 0;
                                             ackCameFromMachine = false;
                                             break;
@@ -221,7 +239,7 @@ void loop()
                 }
             }
             client.stop();
-            if(xTimerStop(TCPMessageTimer, 10) != pdPASS)
+            if (xTimerStop(TCPMessageTimer, 10) != pdPASS)
             {
                 SerialDebugPrint("Timer Stop Failed!");
             }
@@ -238,29 +256,29 @@ void loop()
 
 bool ControlChecksum(uint8_t *dataPointer, uint8_t size)
 {
-	uint8_t checksum = 0;
-	for (uint8_t i = 0; i < size - 1; i++)
-	{
-		checksum ^= dataPointer[i];
-	}
-	checksum ^= 255;
+    uint8_t checksum = 0;
+    for (uint8_t i = 0; i < size - 1; i++)
+    {
+        checksum ^= dataPointer[i];
+    }
+    checksum ^= 255;
     return (dataPointer[size - 1] == checksum);
 }
 
 void SerialDebugPrint(const char *text)
 {
 #if DEBUG_PRINT
-	xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);   
-	Serial.println(text);
-	xSemaphoreGive(xSerialPrintSemaphore);
+    xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
+    Serial.println(text);
+    xSemaphoreGive(xSerialPrintSemaphore);
 #endif
 }
 
 void SerialDebugPrint(int number)
 {
 #if DEBUG_PRINT
-	xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);   
-	Serial.println(number);
-	xSemaphoreGive(xSerialPrintSemaphore);
+    xSemaphoreTake(xSerialPrintSemaphore, portMAX_DELAY);
+    Serial.println(number);
+    xSemaphoreGive(xSerialPrintSemaphore);
 #endif
 }
