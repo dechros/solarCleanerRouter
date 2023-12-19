@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-#define WEB_SITE                "www.dsfabrik.com"
+#define WEB_SITE                "https://www.dsfabrik.com"
 
 #define MACHINE_SERIAL Serial2
 

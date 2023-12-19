@@ -5,6 +5,7 @@
 #include "TCPServerRouter.h"
 #include "Maintenance.h"
 
+bool testMode = true;
 Maintenance MaintenanceHandle;
 
 void setup()
@@ -17,7 +18,7 @@ void setup()
 
 void loop()
 {
-    if (MaintenanceHandle.IsMaintenanceModeActive() == true)
+    if (MaintenanceHandle.IsMaintenanceModeActive() == true || testMode == true)
     {
         MaintenanceHandle.Run();
     }
