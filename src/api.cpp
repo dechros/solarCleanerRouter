@@ -305,5 +305,5 @@ bool IsResponseFalse(const String &response)
 
     String lowercaseResponse = response;
     lowercaseResponse.toLowerCase();
-    return lowercaseResponse.indexOf("false") != -1;
+    return lowercaseResponse.indexOf("false") != -1; 
 }
