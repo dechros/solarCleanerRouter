@@ -23,11 +23,24 @@ Maintenance::~Maintenance()
 
 void Maintenance::Init(void)
 {
+    if (initDone == true)
+    {
+        return;
+    }
+
     WiFi.mode(WIFI_STA);
+    initDone = true;
 }
 
 void Maintenance::Deinit(void)
 {
+    if (initDone == false)
+    {
+        return;
+    }
+    
+    WiFi.disconnect();
+    initDone = false;
 }
 
 bool Maintenance::IsMaintenanceModeActive(void)
@@ -67,16 +80,14 @@ void Maintenance::Run(void)
         else
         {
             SerialDebugPrint("Connecting to WiFi...");
-            WiFi.disconnect();
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
             WiFi.begin(MAINTENANCE_SSID, MAINTENANCE_PASSWORD);
-            vTaskDelay(3000 / portTICK_PERIOD_MS);
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
         }
         break;
     }
     case CONNECTION_ESTABLISHED:
     {
-        RequestApiState_t machineRequest = RequestParametersFromMachine(machineParameters);
+        RequestApiState_t machineRequest = GetParamFromMachine(machineParameters);
         if (machineRequest == FAIL_REQ)
         {
             SerialDebugPrint("Machine request error.");
@@ -134,7 +145,7 @@ void Maintenance::Run(void)
 
         if (fetchResult == SUCCESS_REQ)
         {
-            RequestApiState_t sentResult = SentParametersToMachine(machineParameters);
+            RequestApiState_t sentResult = SendParamToMachine(machineParameters);
             if (sentResult == SUCCESS_REQ)
             {
                 SerialDebugPrint("Machine is updated.");
@@ -159,12 +170,69 @@ void Maintenance::Run(void)
     }
 }
 
-RequestApiState_t Maintenance::SentParametersToMachine(Parameters_t machine)
+bool Maintenance::ReceiveAck(const char *expectedAck)
 {
-    return SUCCESS_REQ;
+    unsigned long startTime = millis();
+    int ackLength = strlen(expectedAck);
+    int matchIndex = 0;
+
+    while (millis() - startTime < ACK_TIMEOUT_MS)
+    {
+        if (Serial.available() > 0)
+        {
+            char inChar = (char)Serial.read();
+            if (inChar == expectedAck[matchIndex])
+            {
+                matchIndex++;
+                if (matchIndex == ackLength)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                matchIndex = 0;
+            }
+        }
+    }
+    return false;
 }
 
-RequestApiState_t Maintenance::RequestParametersFromMachine(Parameters_t &machine)
+RequestApiState_t Maintenance::SendParamToMachine(const Parameters_t machine)
+{
+    RequestApiState_t retVal = FAIL_REQ;
+    MACHINE_SERIAL.print(SET_PARAMETERS_MESSAGE);
+    MACHINE_SERIAL.write((uint8_t *)&machine, sizeof(machine));
+    if (ReceiveAck(SET_PARAMETERS_ACK) == true)
+    {
+        retVal = SUCCESS_REQ;
+    }
+    return retVal;
+}
+
+RequestApiState_t Maintenance::GetParamFromMachine(Parameters_t &machine)
+{
+    RequestApiState_t retVal = FAIL_REQ;
+    MACHINE_SERIAL.print(GET_PARAMETERS_MESSAGE);
+    if (ReceiveAck(GET_PARAMETERS_ACK) == true)
+    {
+        MACHINE_SERIAL.readBytes((uint8_t *)&machine, sizeof(machine));
+        retVal = SUCCESS_REQ;
+    }
+    return retVal;
+}
+
+MaintenanceState_t Maintenance::GetMaintenanceState(void)
+{
+    return maintenanceState;
+}
+
+void Maintenance::SetMaintenanceState(MaintenanceState_t state)
+{
+    maintenanceState = state;
+}
+
+void testMachine(Parameters_t &machine)
 {
     strncpy((char *)machine.companyName, "Test Api 3", sizeof(machine.companyName) - 1);
     machine.companyName[sizeof(machine.companyName) - 1] = '\0';
@@ -203,16 +271,4 @@ RequestApiState_t Maintenance::RequestParametersFromMachine(Parameters_t &machin
     machine.joystickMaxValue = 255;
     machine.potantiometerMinValue = 20;
     machine.potantiometerMaxValue = 230;
-
-    return SUCCESS_REQ;
-}
-
-MaintenanceState_t Maintenance::GetMaintenanceState(void)
-{
-    return maintenanceState;
-}
-
-void Maintenance::SetMaintenanceState(MaintenanceState_t state)
-{
-    maintenanceState = state;
 }

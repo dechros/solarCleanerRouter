@@ -92,7 +92,7 @@ private:
     WiFiClient client;
 
     TCPConnectionState_t TCPConnectionState = WAITING_FOR_CLIENT;
-
+    bool initDone = false;
     bool TCPMessageTimeout = false;
     TimerHandle_t TCPMessageTimer;
     

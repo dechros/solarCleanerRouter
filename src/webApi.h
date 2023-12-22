@@ -1,5 +1,5 @@
 /**
- * @file api.h
+ * @file webApi.h
  * @author Halit Cetin (halitcetin@live.com)
  * @brief WEB API communication header file
  * @version 0.1

@@ -12,7 +12,6 @@ void setup()
 {
     MACHINE_SERIAL.begin(9600);
     SerialDebugPrintInit();
-    TCPServer.Init();
     SerialDebugPrint("Setup Complete!");
 }
 
@@ -20,10 +19,14 @@ void loop()
 {
     if (MaintenanceHandle.IsMaintenanceModeActive() == true || testMode == true)
     {
+        TCPServer.Deinit();
+        MaintenanceHandle.Init();
         MaintenanceHandle.Run();
     }
     else
     {
+        MaintenanceHandle.Deinit();
+        TCPServer.Init();
         TCPServer.Run();
     }
 }

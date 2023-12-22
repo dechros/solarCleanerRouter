@@ -14,6 +14,11 @@ TCPServerRouter::~TCPServerRouter()
 
 void TCPServerRouter::Init(void)
 {
+    if (initDone == true)
+    {
+        return;
+    }
+
     server = WiFiServer(TCP_SERVER_LISTEN_PORT); /* Port */
     IPAddress staticIP(STATIC_IP[0], STATIC_IP[1], STATIC_IP[2], STATIC_IP[3]);
     IPAddress gateway(GATEWAY[0], GATEWAY[1], GATEWAY[2], GATEWAY[3]);
@@ -58,9 +63,15 @@ void TCPServerRouter::Init(void)
 
 void TCPServerRouter::Deinit(void)
 {
+    if (initDone == false)
+    {
+        return;
+    }
+    
     StopTCPMessageTimeoutTimer();
     server.close();
     SetTCPConnectionState(WAITING_FOR_CLIENT);
+    initDone = false;
 }
 
 void TCPServerRouter::Run(void)

@@ -1,5 +1,5 @@
 /**
- * @file api.cpp
+ * @file webApi.cpp
  * @author Halit Cetin (halitcetin@live.com)
  * @brief WEB API communication file
  * @version 0.1
@@ -9,7 +9,7 @@
  *
  */
 
-#include "api.h"
+#include "webApi.h"
 
 RequestApiState_t SetMachineData(const char *apiUrl, const Parameters_t parameters)
 {
