@@ -59,10 +59,10 @@ typedef enum
 } RequestApiState_t;
 
 bool IsResponseFalse(const String &response);
-RequestApiState_t SetMachineData(const char *apiUrl, Parameters_t &parameters);
-RequestApiState_t CreateMachine(const char *apiUrl, Parameters_t &parameters);
-RequestApiState_t FetchMachineData(const char *machineName, const char *apiUrl, Parameters_t &parameters);
-RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const char *targetMachineName);
+RequestApiState_t SetMachineData(const char *apiUrl, const Parameters_t parameters);
+RequestApiState_t CreateMachine(const char *apiUrl, const Parameters_t parameters);
+RequestApiState_t FetchMachineData(const char *apiUrl, Parameters_t &parameters);
+RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const Parameters_t parameters);
 String GetJsonValue(const String &json, const String &key);
 std::vector<int> SplitIpString(const String &ipString);
 

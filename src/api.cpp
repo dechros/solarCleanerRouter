@@ -11,7 +11,7 @@
 
 #include "api.h"
 
-RequestApiState_t SetMachineData(const char *apiUrl, Parameters_t &parameters)
+RequestApiState_t SetMachineData(const char *apiUrl, const Parameters_t parameters)
 {
     RequestApiState_t retVal = FAIL_REQ;
     HTTPClient http;
@@ -51,6 +51,7 @@ RequestApiState_t SetMachineData(const char *apiUrl, Parameters_t &parameters)
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
+    Serial.println("Set HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
@@ -72,7 +73,7 @@ RequestApiState_t SetMachineData(const char *apiUrl, Parameters_t &parameters)
     return retVal;
 }
 
-RequestApiState_t CreateMachine(const char *apiUrl, Parameters_t &parameters)
+RequestApiState_t CreateMachine(const char *apiUrl, const Parameters_t parameters)
 {
     RequestApiState_t retVal = FAIL_REQ;
     HTTPClient http;
@@ -108,6 +109,7 @@ RequestApiState_t CreateMachine(const char *apiUrl, Parameters_t &parameters)
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
+    Serial.println("Create HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
@@ -129,7 +131,7 @@ RequestApiState_t CreateMachine(const char *apiUrl, Parameters_t &parameters)
     return retVal;
 }
 
-RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const char *targetMachineName)
+RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const Parameters_t parameters)
 {
     RequestApiState_t retVal = FALSE_REQ;
     HTTPClient http;
@@ -141,6 +143,7 @@ RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const char *targetMac
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
+    Serial.println("Check HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
@@ -149,7 +152,7 @@ RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const char *targetMac
 
         if (IsResponseFalse(response) == false)
         {
-            String targetString = "\"machineName\":\"" + String(targetMachineName) + "\"";
+            String targetString = "\"machineName\":\"" + String((char *)parameters.companyName) + "\"";
             if (response.indexOf(targetString) != -1)
             {
                 retVal = TRUE_REQ;
@@ -167,18 +170,19 @@ RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const char *targetMac
     return retVal;
 }
 
-RequestApiState_t FetchMachineData(const char *machineName, const char *apiUrl, Parameters_t &parameters)
+RequestApiState_t FetchMachineData(const char *apiUrl, Parameters_t &parameters)
 {
     RequestApiState_t retVal = FAIL_REQ;
     HTTPClient http;
 
     String fullApiUrl = String(apiUrl) + "/robot/api/getMachine.php";
-    String postData = "machineName=" + String(machineName);
+    String postData = "machineName=" + String((char *)parameters.companyName);
 
     http.begin(fullApiUrl);
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
+    Serial.println("Fetch HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
@@ -289,7 +293,12 @@ String GetJsonValue(const String &json, const String &key)
 
 bool IsResponseFalse(const String &response)
 {
-    if (response.length() < 10)
+    if (!response.isEmpty() && (response[0] == ' ' || response[0] == '\0'))
+    {
+        return true;
+    }
+
+    if (response.length() <= 20)
     {
         return true;
     }

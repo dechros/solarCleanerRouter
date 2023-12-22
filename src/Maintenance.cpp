@@ -4,9 +4,9 @@
  * @brief Maintenance mod header file.
  * @version 0.1
  * @date 2023-12-21
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 
 #include "Maintenance.h"
@@ -53,7 +53,7 @@ bool Maintenance::IsMaintenanceModeActive(void)
 
 void Maintenance::Run(void)
 {
-    Parameters_t machineParameters;
+    static Parameters_t machineParameters;
 
     switch (GetMaintenanceState())
     {
@@ -67,6 +67,8 @@ void Maintenance::Run(void)
         else
         {
             SerialDebugPrint("Connecting to WiFi...");
+            WiFi.disconnect();
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             WiFi.begin(MAINTENANCE_SSID, MAINTENANCE_PASSWORD);
             vTaskDelay(3000 / portTICK_PERIOD_MS);
         }
@@ -83,7 +85,7 @@ void Maintenance::Run(void)
         else
         {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
-            RequestApiState_t isMachineInDB = IsMachinePresentInDB(WEB_SITE, (char *)machineParameters.companyName);
+            RequestApiState_t isMachineInDB = IsMachinePresentInDB(WEB_SITE, machineParameters);
 
             if (isMachineInDB == FALSE_REQ)
             {
@@ -128,7 +130,7 @@ void Maintenance::Run(void)
     case CONTINIOUS_UPDATE:
     {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
-        RequestApiState_t fetchResult = FetchMachineData((char *)machineParameters.companyName, WEB_SITE, machineParameters);
+        RequestApiState_t fetchResult = FetchMachineData(WEB_SITE, machineParameters);
 
         if (fetchResult == SUCCESS_REQ)
         {
@@ -164,16 +166,17 @@ RequestApiState_t Maintenance::SentParametersToMachine(Parameters_t machine)
 
 RequestApiState_t Maintenance::RequestParametersFromMachine(Parameters_t &machine)
 {
-    char *testName = "Test Api 3";
-    char *testIP = "192.168.31.31";
+    strncpy((char *)machine.companyName, "Test Api 3", sizeof(machine.companyName) - 1);
+    machine.companyName[sizeof(machine.companyName) - 1] = '\0';
 
-    strncpy((char *)machine.companyName, testName, strlen(testName));
-
-    std::vector<int> ipVec = SplitIpString(testIP);
+    std::vector<int> ipVec = SplitIpString("192.168.31.31");
     machine.machineIP[0] = ipVec[0];
     machine.machineIP[1] = ipVec[1];
     machine.machineIP[2] = ipVec[2];
     machine.machineIP[3] = ipVec[3];
+
+    int seedValue = analogRead(39);
+    randomSeed(seedValue);
 
     machine.leftErrorCount = rand() % 5 + 1;
     machine.rightErrorCount = rand() % 5 + 1;
