@@ -17,7 +17,7 @@
 #include "serialDebugPrint.h"
 #include "webApi.h"
 
-#define ACK_TIMEOUT_MS 1000
+#define TIMEOUT_MS 1000
 
 #define MAINTENANCE_MODE_ACTIVE_MESSAGE "M_A*"
 #define MAINTENANCE_MODE_DEACTIVE_MESSAGE "M_D*"

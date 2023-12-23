@@ -38,7 +38,7 @@ void Maintenance::Deinit(void)
     {
         return;
     }
-    
+
     WiFi.disconnect();
     initDone = false;
 }
@@ -176,11 +176,12 @@ bool Maintenance::ReceiveAck(const char *expectedAck)
     int ackLength = strlen(expectedAck);
     int matchIndex = 0;
 
-    while (millis() - startTime < ACK_TIMEOUT_MS)
+    while (millis() - startTime < TIMEOUT_MS)
     {
-        if (Serial.available() > 0)
+        if (MACHINE_SERIAL.available() > 0)
         {
-            char inChar = (char)Serial.read();
+            char inChar = (char)MACHINE_SERIAL.read();
+            MACHINE_SERIAL.print(inChar);
             if (inChar == expectedAck[matchIndex])
             {
                 matchIndex++;
@@ -203,22 +204,59 @@ RequestApiState_t Maintenance::SendParamToMachine(const Parameters_t machine)
     RequestApiState_t retVal = FAIL_REQ;
     MACHINE_SERIAL.print(SET_PARAMETERS_MESSAGE);
     MACHINE_SERIAL.write((uint8_t *)&machine, sizeof(machine));
-    if (ReceiveAck(SET_PARAMETERS_ACK) == true)
+    if (ReceiveAck(SET_PARAMETERS_ACK) == false)
     {
-        retVal = SUCCESS_REQ;
+        Serial.println("SET ACK Failed.");
+        return retVal;
     }
+
+    Serial.println("SET ACK OK.");
+
+    retVal = SUCCESS_REQ;
     return retVal;
 }
 
 RequestApiState_t Maintenance::GetParamFromMachine(Parameters_t &machine)
 {
     RequestApiState_t retVal = FAIL_REQ;
+    unsigned long startTime = millis();
     MACHINE_SERIAL.print(GET_PARAMETERS_MESSAGE);
-    if (ReceiveAck(GET_PARAMETERS_ACK) == true)
+
+    if (ReceiveAck(GET_PARAMETERS_ACK) == false)
     {
-        MACHINE_SERIAL.readBytes((uint8_t *)&machine, sizeof(machine));
-        retVal = SUCCESS_REQ;
+        Serial.println("GET ACK Failed.");
+        return retVal;
     }
+
+    Serial.println("GET ACK OK.");
+
+    size_t bytesReceived = 0;
+    while ((millis() - startTime < TIMEOUT_MS) && (bytesReceived < sizeof(machine)))
+    {
+        if (MACHINE_SERIAL.available() > 0)
+        {
+            bytesReceived += MACHINE_SERIAL.readBytes((uint8_t *)&machine + bytesReceived, sizeof(machine) - bytesReceived);
+        }
+    }
+
+    if (millis() - startTime > TIMEOUT_MS)
+    {
+        Serial.println("GET timeout.");
+        return retVal;
+    }
+
+    if (bytesReceived != sizeof(machine))
+    {
+        Serial.println("GET incorrect number of bytes received.");
+        return retVal;
+    }
+
+    machine.machineIP[0] = STATIC_IP[0];
+    machine.machineIP[1] = STATIC_IP[1];
+    machine.machineIP[2] = STATIC_IP[2];
+    machine.machineIP[3] = STATIC_IP[3];
+
+    retVal = SUCCESS_REQ;
     return retVal;
 }
 
@@ -230,45 +268,4 @@ MaintenanceState_t Maintenance::GetMaintenanceState(void)
 void Maintenance::SetMaintenanceState(MaintenanceState_t state)
 {
     maintenanceState = state;
-}
-
-void testMachine(Parameters_t &machine)
-{
-    strncpy((char *)machine.companyName, "Test Api 3", sizeof(machine.companyName) - 1);
-    machine.companyName[sizeof(machine.companyName) - 1] = '\0';
-
-    std::vector<int> ipVec = SplitIpString("192.168.31.31");
-    machine.machineIP[0] = ipVec[0];
-    machine.machineIP[1] = ipVec[1];
-    machine.machineIP[2] = ipVec[2];
-    machine.machineIP[3] = ipVec[3];
-
-    int seedValue = analogRead(39);
-    randomSeed(seedValue);
-
-    machine.leftErrorCount = rand() % 5 + 1;
-    machine.rightErrorCount = rand() % 5 + 1;
-    machine.brushErrorCount = rand() % 5 + 1;
-    machine.controllerErrorCount = rand() % 5 + 1;
-
-    machine.leftRampUp = 6;
-    machine.leftRampDown = 4;
-    machine.rightRampUp = 7;
-    machine.rightRampDown = 3;
-    machine.brushRampUp = 5;
-    machine.brushRampDown = 2;
-
-    machine.leftMinSpeed = 1;
-    machine.leftMaxSpeed = 8;
-    machine.rightMinSpeed = 2;
-    machine.rightMaxSpeed = 9;
-    machine.brushMinSpeed = 3;
-    machine.brushMaxSpeed = 10;
-
-    machine.joystickMiddleValue = 127;
-    machine.joystickDeadZone = 5;
-    machine.joystickMinValue = 0;
-    machine.joystickMaxValue = 255;
-    machine.potantiometerMinValue = 20;
-    machine.potantiometerMaxValue = 230;
 }
