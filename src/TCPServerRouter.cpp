@@ -123,21 +123,16 @@ void TCPServerRouter::Run(void)
             {
                 SerialDebugPrint("Proper TCP Message Came!");
                 SendMessageToMachine(readTCPMessage);
-                SetTCPConnectionState(MACHINE_ACK_AWAITING);
-            }
-            break;
-        }
-        case MACHINE_ACK_AWAITING:
-        {
-            MachineResponseState_t response = WaitACKFromMachine();
-            if (response == ACK_CAME)
-            {
-                SendACKToRemote();
-                SetTCPConnectionState(CLIENT_CONNECTED);
-            }
-            else if (response == RESPONSE_TIMEOUT)
-            {
-                SetTCPConnectionState(CLIENT_CONNECTED);
+                MachineResponseState_t response = WaitACKFromMachine();
+                if (response == ACK_CAME)
+                {
+                    SendACKToRemote();
+                    SetTCPConnectionState(CLIENT_CONNECTED);
+                }
+                else if (response == RESPONSE_TIMEOUT)
+                {
+                    SetTCPConnectionState(CLIENT_CONNECTED);
+                }
             }
             break;
         }

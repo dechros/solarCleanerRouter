@@ -53,6 +53,7 @@ bool Maintenance::IsMaintenanceModeActive(void)
         MACHINE_SERIAL.readBytes((uint8_t *)buffer, 4);
         if (strncmp((const char *)buffer, MAINTENANCE_MODE_ACTIVE_MESSAGE, 4) == 0)
         {
+            SerialDebugPrint("Maintenance Mode Active");
             TCPServer.Deinit();
             Init();
             maintenanceModeActive = true;
@@ -60,10 +61,35 @@ bool Maintenance::IsMaintenanceModeActive(void)
         }
         else if (strncmp((const char *)buffer, MAINTENANCE_MODE_DEACTIVE_MESSAGE, 4) == 0)
         {
+            SerialDebugPrint("Maintenance Mode deactive");
             Deinit();
             TCPServer.Init();
             maintenanceModeActive = false;
             MACHINE_SERIAL.write(ACK_MESSAGE, 3);
+        }
+    }
+    else if(MACHINE_SERIAL.peek() == 'M' && MACHINE_SERIAL.available() < 4)
+    {
+        static uint8_t discardCounter = 0;
+        discardCounter++; 
+        if (discardCounter == 0)
+        {
+            discardCounter = 0;
+            SerialDebugPrint("Discarded buffer missing message");
+            uint16_t available = MACHINE_SERIAL.available();
+            for (uint16_t size = 0; size < available; size++)
+            {
+                MACHINE_SERIAL.read();
+            }
+        }
+    }
+    else if(MACHINE_SERIAL.peek() != 'M' && MACHINE_SERIAL.available() > 0)
+    {
+        SerialDebugPrint("Discarded buffer wrong header");
+        uint16_t available = MACHINE_SERIAL.available();
+        for (uint16_t size = 0; size < available; size++)
+        {
+            MACHINE_SERIAL.read();
         }
     }
     return maintenanceModeActive;
