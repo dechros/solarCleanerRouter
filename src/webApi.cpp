@@ -51,12 +51,10 @@ RequestApiState_t SetMachineData(const char *apiUrl, const Parameters_t paramete
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
-    Serial.println("Set HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
         String response = http.getString();
-        Serial.println("Set HTTP Response: " + response);
 
         if (IsResponseFalse(response) == false)
         {
@@ -109,7 +107,6 @@ RequestApiState_t CreateMachine(const char *apiUrl, const Parameters_t parameter
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
-    Serial.println("Create HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
@@ -143,12 +140,10 @@ RequestApiState_t IsMachinePresentInDB(const char *apiUrl, const Parameters_t pa
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
-    Serial.println("Check HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
         String response = http.getString();
-        Serial.println("Machine Check HTTP Response: " + response);
 
         if (IsResponseFalse(response) == false)
         {
@@ -182,12 +177,10 @@ RequestApiState_t FetchMachineData(const char *apiUrl, Parameters_t &parameters)
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpResponseCode = http.POST(postData);
-    Serial.println("Fetch HTTP Post: " + postData);
 
     if (httpResponseCode == HTTP_CODE_OK)
     {
         String response = http.getString();
-        Serial.println("Fetch HTTP Response: " + response);
 
         if (IsResponseFalse(response) == false)
         {

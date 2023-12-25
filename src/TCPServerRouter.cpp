@@ -1,6 +1,7 @@
 #include "TCPServerRouter.h"
 #include "serialDebugPrint.h"
 #include "config.h"
+#include "globals.h"
 
 TCPServerRouter::TCPServerRouter()
 {
@@ -19,10 +20,12 @@ void TCPServerRouter::Init(void)
         return;
     }
 
+    SerialDebugPrint("Router Mode");
     server = WiFiServer(TCP_SERVER_LISTEN_PORT); /* Port */
     IPAddress staticIP(STATIC_IP[0], STATIC_IP[1], STATIC_IP[2], STATIC_IP[3]);
     IPAddress gateway(GATEWAY[0], GATEWAY[1], GATEWAY[2], GATEWAY[3]);
     IPAddress subnet(SUBNET[0], SUBNET[1], SUBNET[2], SUBNET[3]);
+    WiFi.mode(WIFI_AP);
     bool result = WiFi.softAPConfig(staticIP, gateway, subnet);
     if (result == true)
     {
@@ -49,7 +52,6 @@ void TCPServerRouter::Init(void)
                 /* Error! */
             }
         }
-        
     }
     else
     {
@@ -59,6 +61,7 @@ void TCPServerRouter::Init(void)
             /* Error! */
         }
     }
+    initDone = true;
 }
 
 void TCPServerRouter::Deinit(void)
@@ -70,6 +73,7 @@ void TCPServerRouter::Deinit(void)
     
     StopTCPMessageTimeoutTimer();
     server.close();
+    WiFi.disconnect();
     SetTCPConnectionState(WAITING_FOR_CLIENT);
     initDone = false;
 }

@@ -28,7 +28,9 @@ void Maintenance::Init(void)
         return;
     }
 
+    SerialDebugPrint("Maintenance Mode");
     WiFi.mode(WIFI_STA);
+    WiFi.begin(MAINTENANCE_SSID, MAINTENANCE_PASSWORD);
     initDone = true;
 }
 
@@ -54,11 +56,14 @@ bool Maintenance::IsMaintenanceModeActive(void)
             TCPServer.Deinit();
             Init();
             maintenanceModeActive = true;
+            MACHINE_SERIAL.write(ACK_MESSAGE, 3);
         }
         else if (strncmp((const char *)buffer, MAINTENANCE_MODE_DEACTIVE_MESSAGE, 4) == 0)
         {
+            Deinit();
             TCPServer.Init();
             maintenanceModeActive = false;
+            MACHINE_SERIAL.write(ACK_MESSAGE, 3);
         }
     }
     return maintenanceModeActive;
@@ -70,103 +75,108 @@ void Maintenance::Run(void)
 
     switch (GetMaintenanceState())
     {
-    case WIFI_CONNECTION_STATE:
-    {
-        if (WiFi.status() == WL_CONNECTED)
+        case WIFI_CONNECTION_STATE:
         {
-            SerialDebugPrint("Connected to WiFi.");
-            SetMaintenanceState(CONNECTION_ESTABLISHED);
+            if (WiFi.status() == WL_CONNECTED)
+            {
+                SerialDebugPrint("Connected to WiFi.");
+                SetMaintenanceState(CONNECTION_ESTABLISHED);
+            }
+            else
+            {
+                SerialDebugPrint("Connecting to WiFi...");
+                vTaskDelay(3000 / portTICK_PERIOD_MS);
+            }
+            break;
         }
-        else
+        case CONNECTION_ESTABLISHED:
         {
-            SerialDebugPrint("Connecting to WiFi...");
-            WiFi.begin(MAINTENANCE_SSID, MAINTENANCE_PASSWORD);
+            RequestApiState_t machineRequest = GetParamFromMachine(machineParameters);
+            if (machineRequest == FAIL_REQ)
+            {
+                SerialDebugPrint("Machine request error.");
+                SetMaintenanceState(WIFI_CONNECTION_STATE);
+            }
+            else
+            {
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                RequestApiState_t isMachineInDB = IsMachinePresentInDB(WEB_SITE, machineParameters);
+
+                if (isMachineInDB == FALSE_REQ)
+                {
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    RequestApiState_t createResult = CreateMachine(WEB_SITE, machineParameters);
+
+                    if (createResult == SUCCESS_REQ)
+                    {
+                        SerialDebugPrint("Machine is created.");
+                        SetMaintenanceState(CONTINIOUS_UPDATE);
+                    }
+                    else
+                    {
+                        SerialDebugPrint("CreateMachine API Communication error.");
+                        SetMaintenanceState(WIFI_CONNECTION_STATE);
+                    }
+                }
+                else if (isMachineInDB == TRUE_REQ)
+                {
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    RequestApiState_t setResult = SetMachineData(WEB_SITE, machineParameters);
+
+                    if (setResult == SUCCESS_REQ)
+                    {
+                        SerialDebugPrint("Machine DB is updated.");
+                        SetMaintenanceState(CONTINIOUS_UPDATE);
+                    }
+                    else
+                    {
+                        SerialDebugPrint("SetMachineData API Communication error.");
+                        SetMaintenanceState(WIFI_CONNECTION_STATE);
+                    }
+                }
+                else
+                {
+                    SerialDebugPrint("IsMachinePresentInDB API Communication error.");
+                    SetMaintenanceState(WIFI_CONNECTION_STATE);
+                }
+            }
+            break;
+        }
+        case CONTINIOUS_UPDATE:
+        {
+            static uint8_t cannotSentCounter = 0;
             vTaskDelay(5000 / portTICK_PERIOD_MS);
-        }
-        break;
-    }
-    case CONNECTION_ESTABLISHED:
-    {
-        RequestApiState_t machineRequest = GetParamFromMachine(machineParameters);
-        if (machineRequest == FAIL_REQ)
-        {
-            SerialDebugPrint("Machine request error.");
-            SetMaintenanceState(WIFI_CONNECTION_STATE);
-        }
-        else
-        {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            RequestApiState_t isMachineInDB = IsMachinePresentInDB(WEB_SITE, machineParameters);
+            RequestApiState_t fetchResult = FetchMachineData(WEB_SITE, machineParameters);
 
-            if (isMachineInDB == FALSE_REQ)
+            if (fetchResult == SUCCESS_REQ)
             {
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
-                RequestApiState_t createResult = CreateMachine(WEB_SITE, machineParameters);
-
-                if (createResult == SUCCESS_REQ)
+                RequestApiState_t sentResult = SendParamToMachine(machineParameters);
+                if (sentResult == SUCCESS_REQ)
                 {
-                    SerialDebugPrint("Machine is created.");
-                    SetMaintenanceState(CONTINIOUS_UPDATE);
+                    SerialDebugPrint("Machine is updated.");
                 }
                 else
                 {
-                    SerialDebugPrint("CreateMachine API Communication error.");
-                    SetMaintenanceState(WIFI_CONNECTION_STATE);
-                }
-            }
-            else if (isMachineInDB == TRUE_REQ)
-            {
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
-                RequestApiState_t setResult = SetMachineData(WEB_SITE, machineParameters);
-
-                if (setResult == SUCCESS_REQ)
-                {
-                    SerialDebugPrint("Machine DB is updated.");
-                    SetMaintenanceState(CONTINIOUS_UPDATE);
-                }
-                else
-                {
-                    SerialDebugPrint("SetMachineData API Communication error.");
-                    SetMaintenanceState(WIFI_CONNECTION_STATE);
+                    SerialDebugPrint("Machine send error.");
+                    cannotSentCounter++;
+                    if (cannotSentCounter == 3)
+                    {
+                        cannotSentCounter = 0;
+                        SetMaintenanceState(WIFI_CONNECTION_STATE);
+                    }
                 }
             }
             else
             {
-                SerialDebugPrint("IsMachinePresentInDB API Communication error.");
+                SerialDebugPrint("FetchMachineData API Communication error.");
                 SetMaintenanceState(WIFI_CONNECTION_STATE);
             }
+            break;
         }
-        break;
-    }
-    case CONTINIOUS_UPDATE:
-    {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        RequestApiState_t fetchResult = FetchMachineData(WEB_SITE, machineParameters);
-
-        if (fetchResult == SUCCESS_REQ)
+        default:
         {
-            RequestApiState_t sentResult = SendParamToMachine(machineParameters);
-            if (sentResult == SUCCESS_REQ)
-            {
-                SerialDebugPrint("Machine is updated.");
-            }
-            else
-            {
-                SerialDebugPrint("Machine send error.");
-                SetMaintenanceState(WIFI_CONNECTION_STATE);
-            }
+            break;
         }
-        else
-        {
-            SerialDebugPrint("FetchMachineData API Communication error.");
-            SetMaintenanceState(WIFI_CONNECTION_STATE);
-        }
-        break;
-    }
-    default:
-    {
-        break;
-    }
     }
 }
 
@@ -181,7 +191,6 @@ bool Maintenance::ReceiveAck(const char *expectedAck)
         if (MACHINE_SERIAL.available() > 0)
         {
             char inChar = (char)MACHINE_SERIAL.read();
-            MACHINE_SERIAL.print(inChar);
             if (inChar == expectedAck[matchIndex])
             {
                 matchIndex++;
@@ -202,7 +211,7 @@ bool Maintenance::ReceiveAck(const char *expectedAck)
 RequestApiState_t Maintenance::SendParamToMachine(const Parameters_t machine)
 {
     RequestApiState_t retVal = FAIL_REQ;
-    MACHINE_SERIAL.print(SET_PARAMETERS_MESSAGE);
+    MACHINE_SERIAL.write(SET_PARAMETERS_MESSAGE, 3);
     MACHINE_SERIAL.write((uint8_t *)&machine, sizeof(machine));
     if (ReceiveAck(SET_PARAMETERS_ACK) == false)
     {
@@ -220,7 +229,7 @@ RequestApiState_t Maintenance::GetParamFromMachine(Parameters_t &machine)
 {
     RequestApiState_t retVal = FAIL_REQ;
     unsigned long startTime = millis();
-    MACHINE_SERIAL.print(GET_PARAMETERS_MESSAGE);
+    MACHINE_SERIAL.write(GET_PARAMETERS_MESSAGE, 3);
 
     if (ReceiveAck(GET_PARAMETERS_ACK) == false)
     {

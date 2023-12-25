@@ -5,7 +5,6 @@
 #include "TCPServerRouter.h"
 #include "Maintenance.h"
 
-bool testMode = true;
 Maintenance MaintenanceHandle;
 
 void setup()
@@ -17,7 +16,7 @@ void setup()
 
 void loop()
 {
-    if (MaintenanceHandle.IsMaintenanceModeActive() == true || testMode == true)
+    if (MaintenanceHandle.IsMaintenanceModeActive() == true)
     {
         TCPServer.Deinit();
         MaintenanceHandle.Init();
@@ -29,9 +28,4 @@ void loop()
         TCPServer.Init();
         TCPServer.Run();
     }
-}
-
-void TCPMessageTimerCallback(TimerHandle_t xTimer)
-{
-    TCPServer.SetTCPMessageTimeout(true);
 }
