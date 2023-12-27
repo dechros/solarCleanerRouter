@@ -112,26 +112,23 @@ void TCPServerRouter::Run(void)
             else if (TCPMessageBufferSize() > 0)
             {
                 ResetTCPMessageTimeoutTimer();
-                SetTCPConnectionState(PARSE_TCP_MESSAGE);
-            }
-            break;
-        }
-        case PARSE_TCP_MESSAGE:
-        {
-            TCPMessage_t readTCPMessage;
-            if (CheckForProperTCPMessage(&readTCPMessage) == true)
-            {
-                SerialDebugPrint("Proper TCP Message Came!");
-                SendMessageToMachine(readTCPMessage);
-                MachineResponseState_t response = WaitACKFromMachine();
-                if (response == ACK_CAME)
+                TCPMessage_t readTCPMessage;
+                if (CheckForProperTCPMessage(&readTCPMessage) == true)
                 {
-                    SendACKToRemote();
-                    SetTCPConnectionState(CLIENT_CONNECTED);
-                }
-                else if (response == RESPONSE_TIMEOUT)
-                {
-                    SetTCPConnectionState(CLIENT_CONNECTED);
+                    SerialDebugPrint("Proper TCP Message Came!");
+                    SendMessageToMachine(readTCPMessage);
+                    MachineResponseState_t response = WaitACKFromMachine();
+                    if (response == ACK_CAME)
+                    {
+                        SerialDebugPrint("ACK Came from machine");
+                        SendACKToRemote();
+                        SerialDebugPrint("ACK Sent to Remote");
+                        SetTCPConnectionState(CLIENT_CONNECTED);
+                    }
+                    else if (response == RESPONSE_TIMEOUT)
+                    {
+                        SetTCPConnectionState(CLIENT_CONNECTED);
+                    }
                 }
             }
             break;
@@ -219,7 +216,7 @@ bool TCPServerRouter::CheckForProperTCPMessage(TCPMessage_t* messagePointer)
             bool result = ControlChecksum((uint8_t *)messagePointer, sizeof(TCPMessage_t));
             if (result == true)
             {
-                return true;
+                return true; 
             }
         }
         int discardData = client.read();
@@ -241,65 +238,56 @@ MachineResponseState_t TCPServerRouter::WaitACKFromMachine(void)
 {
     bool ackCameFromMachine = false;
     static uint8_t ackWaitCounter = 0;
-    
-    if (MACHINE_SERIAL.available() > 0)
+    MachineResponseState_t response = RESPONSE_TIMEOUT;
+    for (uint8_t i = 0; i < 10; i++)
     {
-        uint8_t firstByte = MACHINE_SERIAL.peek();
-        if (firstByte == 'A' && MACHINE_SERIAL.available() >= 3)
+        if (MACHINE_SERIAL.available() > 0)
         {
-            ackWaitCounter = 0;
-            uint8_t message[3] = {0};
-            MACHINE_SERIAL.readBytes(message, 3);
-            if (strncmp((const char *)message, ACK_MESSAGE, 3) == 0)
+            uint8_t firstByte = MACHINE_SERIAL.peek();
+            if (firstByte == 'A' && MACHINE_SERIAL.available() >= 3)
             {
-                /* ACK Came from machine */
-                ackCameFromMachine = true;
-                return ACK_CAME;
+                ackWaitCounter = 0;
+                uint8_t message[3] = {0};
+                MACHINE_SERIAL.readBytes(message, 3);
+                if (strncmp((const char *)message, ACK_MESSAGE, 3) == 0)
+                {
+                    /* ACK Came from machine */
+                    ackCameFromMachine = true;
+                    return ACK_CAME;
+                }
+                else
+                {
+                    /* Unknown 3 byte message came */
+                    SerialDebugPrint("Unknown 3 byte message came from machine");
+                    return UNKNOWN_MESSAGE;
+                }
+            }
+            else if(firstByte == 'A' && MACHINE_SERIAL.available() < 3)
+            {
+                /* Wait max 50ms for ACK */
+                vTaskDelay(5 / portTICK_PERIOD_MS);
             }
             else
             {
-                /* Unknown 3 byte message came */
-                SerialDebugPrint("Unknown 3 byte message came from machine");
-                return UNKNOWN_MESSAGE;
+                /* Discard unknown header */
+                MACHINE_SERIAL.read();
             }
-        }
-        else if(firstByte == 'A' && MACHINE_SERIAL.available() < 3)
-        {
-            /* Wait max 50ms for ACK */
-            vTaskDelay(10 / portTICK_PERIOD_MS);
-            ackWaitCounter++;
-            if (ackWaitCounter == 5)
-            {
-                SerialDebugPrint("ackWaitCounter timeout!");
-                /* Clear serial buffer */
-                for (uint8_t i = 0; i < MACHINE_SERIAL.available(); i++)
-                {
-                    MACHINE_SERIAL.read();
-                }
-                ackWaitCounter = 0;
-                return RESPONSE_TIMEOUT;
-            }
-            return MISSING_MESSAGE;
         }
         else
         {
-            /* Discard unknown header */
-            MACHINE_SERIAL.read();
-            return UNKNOWN_MESSAGE;
+            vTaskDelay(5 / portTICK_PERIOD_MS);
         }
-    }
-    else
+    } 
+    if (response == RESPONSE_TIMEOUT)
     {
-        /* Wait max 50ms for ACK */
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        ackWaitCounter++;
-        if (ackWaitCounter == 5)
+        uint16_t size = MACHINE_SERIAL.available();
+        for (uint8_t i = 0; i < size; i++)
         {
-            ackWaitCounter = 0;
-            return RESPONSE_TIMEOUT;
+            MACHINE_SERIAL.read();
         }
-        return MISSING_MESSAGE;
     }
+    
+    return response;
 }
 
 bool TCPServerRouter::GetTCPMessageTimeout(void)

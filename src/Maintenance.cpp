@@ -70,27 +70,40 @@ bool Maintenance::IsMaintenanceModeActive(void)
     }
     else if(MACHINE_SERIAL.peek() == 'M' && MACHINE_SERIAL.available() < 4)
     {
-        static uint8_t discardCounter = 0;
-        discardCounter++; 
-        if (discardCounter == 0)
+        for (uint8_t i = 0; i < 10; i++)
         {
-            discardCounter = 0;
-            SerialDebugPrint("Discarded buffer missing message");
-            uint16_t available = MACHINE_SERIAL.available();
-            for (uint16_t size = 0; size < available; size++)
+            if (MACHINE_SERIAL.available() < 4)
             {
-                MACHINE_SERIAL.read();
+                vTaskDelay(5 / portTICK_PERIOD_MS);
+            }
+            else
+            {
+                uint8_t buffer[4];
+                MACHINE_SERIAL.readBytes((uint8_t *)buffer, 4);
+                if (strncmp((const char *)buffer, MAINTENANCE_MODE_ACTIVE_MESSAGE, 4) == 0)
+                {
+                    SerialDebugPrint("Maintenance Mode Active");
+                    TCPServer.Deinit();
+                    Init();
+                    maintenanceModeActive = true;
+                    MACHINE_SERIAL.write(ACK_MESSAGE, 3);
+                }
+                else if (strncmp((const char *)buffer, MAINTENANCE_MODE_DEACTIVE_MESSAGE, 4) == 0)
+                {
+                    SerialDebugPrint("Maintenance Mode deactive");
+                    Deinit();
+                    TCPServer.Init();
+                    maintenanceModeActive = false;
+                    MACHINE_SERIAL.write(ACK_MESSAGE, 3);
+                }
             }
         }
     }
     else if(MACHINE_SERIAL.peek() != 'M' && MACHINE_SERIAL.available() > 0)
     {
         SerialDebugPrint("Discarded buffer wrong header");
-        uint16_t available = MACHINE_SERIAL.available();
-        for (uint16_t size = 0; size < available; size++)
-        {
-            MACHINE_SERIAL.read();
-        }
+        SerialDebugPrint(MACHINE_SERIAL.peek());
+        MACHINE_SERIAL.read();
     }
     return maintenanceModeActive;
 }
@@ -171,11 +184,15 @@ void Maintenance::Run(void)
         case CONTINIOUS_UPDATE:
         {
             static uint8_t cannotSentCounter = 0;
-            vTaskDelay(5000 / portTICK_PERIOD_MS);
             RequestApiState_t fetchResult = FetchMachineData(WEB_SITE, machineParameters);
 
             if (fetchResult == SUCCESS_REQ)
             {
+                uint8_t size = MACHINE_SERIAL.available();
+                for (uint16_t i = 0; i < size; i++)
+                {
+                    MACHINE_SERIAL.read();
+                }
                 RequestApiState_t sentResult = SendParamToMachine(machineParameters);
                 if (sentResult == SUCCESS_REQ)
                 {
@@ -197,6 +214,8 @@ void Maintenance::Run(void)
                 SerialDebugPrint("FetchMachineData API Communication error.");
                 SetMaintenanceState(WIFI_CONNECTION_STATE);
             }
+            
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
             break;
         }
         default:

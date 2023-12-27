@@ -11,8 +11,7 @@ typedef enum
 {
     WAITING_FOR_CLIENT,
     CLIENT_CONNECTED,
-    PARSE_TCP_MESSAGE,
-    MACHINE_ACK_AWAITING
+    PARSE_TCP_MESSAGE
 }TCPConnectionState_t;
 
 typedef enum
